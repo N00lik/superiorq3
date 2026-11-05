@@ -276,6 +276,64 @@ void G_MissileImpact( gentity_t *ent, trace_t *trace ) {
 #endif
 	other = &g_entities[trace->entityNum];
 
+		// ============================================================
+	// ГРАНАТА: отскок от всего (стены, игроки, включая метателя)
+	// + контактный урон. Quad и g_grenadeContactDamage уже
+	// «запечены» в ent->count при вылете из
+	// weapon_grenadelauncher_fire.
+	//
+	// Контактный урон — только при ПРЯМОМ попадании (до первого
+	// отскока). После любого отскока/касания ent->activator != NULL,
+	// и урон больше не наносится. Отскок работает всегда.
+	// ============================================================
+	if ( ent->s.weapon == WP_GRENADE_LAUNCHER && ( ent->s.eFlags & EF_BOUNCE_HALF ) ) {
+
+		// Контактный урон только при первом контакте (граната ещё не отскакивала)
+		if ( other && other->client && other->takedamage && other->health > 0
+		     && !ent->activator ) {
+
+#ifdef MISSIONPACK
+			// По инвьюл-игроку урон не наносим, но отскок и флаг ставим
+			if ( other->client->invulnerabilityTime > level.time ) {
+				G_BounceMissile( ent, trace );
+				ent->activator = ent;	// маркер «уже отскочила»
+				G_AddEvent( ent, EV_GRENADE_BOUNCE, 0 );
+				return;
+			}
+			#endif
+
+			{
+				gentity_t	*attacker = &g_entities[ent->r.ownerNum];
+				vec3_t		velocity;
+
+				// Направление удара = направление полёта гранаты в момент попадания
+				BG_EvaluateTrajectoryDelta( &ent->s.pos, level.time, velocity );
+				if ( VectorLength( velocity ) == 0 ) {
+					velocity[2] = 1;	// защита от нулевого вектора
+				}
+
+				// ent->count содержит g_grenadeContactDamage.value * s_quadFactor
+				G_Damage( other, ent, attacker, velocity, trace->endpos,
+				          ent->count, 0, MOD_GRENADE );
+
+				if ( attacker->client && LogAccuracyHit( other, attacker ) ) {
+					attacker->client->accuracy_hits++;
+				}
+			}
+		}
+
+		// Отскок в любом случае (стена, игрок, инвьюл, сам метатель)
+		G_BounceMissile( ent, trace );
+		ent->activator = ent;	// маркер «уже отскочила» — контактный урон больше не наносим
+		G_AddEvent( ent, EV_GRENADE_BOUNCE, 0 );
+		return;
+	}
+
+	// ============================================================
+	// ДАЛЬШЕ — ОРИГИНАЛЬНЫЙ КОД БЕЗ ИЗМЕНЕНИЙ
+	// ============================================================
+
+
 	// check for bounce
 	if ( !other->takedamage &&
 		( ent->s.eFlags & ( EF_BOUNCE | EF_BOUNCE_HALF ) ) ) {
@@ -356,7 +414,6 @@ void G_MissileImpact( gentity_t *ent, trace_t *trace ) {
 		VectorSet(ent->r.mins, -4, -4, -4);
 		VectorSet(ent->r.maxs, 4, 4, 4);
 		trap_LinkEntity(ent);
-
 		return;
 	}
 #endif
@@ -463,6 +520,9 @@ void G_RunMissile( gentity_t *ent ) {
 		passent = ENTITYNUM_NONE;
 	}
 #endif
+	else if ( ent->s.weapon == WP_GRENADE_LAUNCHER && ent->timestamp ) {
+		passent = ENTITYNUM_NONE;
+	}
 	else {
 		// ignore interactions with the missile owner
 		passent = ent->r.ownerNum;
@@ -506,6 +566,14 @@ void G_RunMissile( gentity_t *ent ) {
 		}
 	}
 #endif
+	// граната ещё в bbox владельца? проверяем и ставим флаг «вылетела»
+	if ( ent->s.weapon == WP_GRENADE_LAUNCHER && !ent->timestamp ) {
+		trap_Trace( &tr, ent->r.currentOrigin, ent->r.mins, ent->r.maxs,
+					ent->r.currentOrigin, ENTITYNUM_NONE, ent->clipmask );
+		if ( !tr.startsolid || tr.entityNum != ent->r.ownerNum ) {
+			ent->timestamp = 1; // вылетела — теперь может бить владельца
+		}
+	}
 	// check think function after bouncing
 	G_RunThink( ent );
 }
@@ -567,7 +635,7 @@ gentity_t *fire_grenade (gentity_t *self, vec3_t start, vec3_t dir) {
 
 	bolt = G_Spawn();
 	bolt->classname = "grenade";
-	bolt->nextthink = level.time + 2500;
+	bolt->nextthink = level.time + 1100; // время до взрыва гранаты
 	bolt->think = G_ExplodeMissile;
 	bolt->s.eType = ET_MISSILE;
 	bolt->r.svFlags = SVF_USE_CURRENT_ORIGIN;
@@ -586,7 +654,7 @@ gentity_t *fire_grenade (gentity_t *self, vec3_t start, vec3_t dir) {
 	bolt->s.pos.trType = TR_GRAVITY;
 	bolt->s.pos.trTime = level.time - MISSILE_PRESTEP_TIME;		// move a bit on the very first frame
 	VectorCopy( start, bolt->s.pos.trBase );
-	VectorScale( dir, 700, bolt->s.pos.trDelta );
+	VectorScale( dir, 1000, bolt->s.pos.trDelta ); // дальнобойность гранатомета
 	SnapVector( bolt->s.pos.trDelta );			// save net bandwidth
 
 	VectorCopy (start, bolt->r.currentOrigin);

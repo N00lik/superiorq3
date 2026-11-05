@@ -29,6 +29,18 @@ static	float	s_quadFactor;
 static	vec3_t	forward, right, up;
 static	vec3_t	muzzle;
 
+//Наследует продольную скорость игрока (вдоль взгляда) снарядом.
+static void G_AddPlayerForwardSpeed( gentity_t *m, gentity_t *ent ) {
+	float forwardSpeed;
+
+	forwardSpeed = DotProduct( ent->client->ps.velocity, forward );
+
+	if ( forwardSpeed > 0 ) {
+		VectorMA( m->s.pos.trDelta, forwardSpeed, forward, m->s.pos.trDelta );
+		SnapVector( m->s.pos.trDelta );
+	}
+}
+
 #define NUM_NAILSHOTS 15
 
 /*
@@ -251,7 +263,7 @@ void BFG_Fire ( gentity_t *ent ) {
 	m->damage *= s_quadFactor;
 	m->splashDamage *= s_quadFactor;
 
-//	VectorAdd( m->s.pos.trDelta, ent->client->ps.velocity, m->s.pos.trDelta );	// "real" physics
+	G_AddPlayerForwardSpeed(m, ent);
 }
 
 
@@ -372,14 +384,15 @@ void weapon_grenadelauncher_fire (gentity_t *ent) {
 	gentity_t	*m;
 
 	// extra vertical velocity
-	forward[2] += 0.2f;
-	VectorNormalize( forward );
+	//forward[2] += 0.2f;
+	//VectorNormalize( forward );
 
 	m = fire_grenade (ent, muzzle, forward);
 	m->damage *= s_quadFactor;
 	m->splashDamage *= s_quadFactor;
-
-//	VectorAdd( m->s.pos.trDelta, ent->client->ps.velocity, m->s.pos.trDelta );	// "real" physics
+	
+	m->count = (int)( g_grenadeContactDamage.value * s_quadFactor ); //контактный урон определен в g_main.c
+	G_AddPlayerForwardSpeed(m, ent);
 }
 
 /*
@@ -397,7 +410,7 @@ void Weapon_RocketLauncher_Fire (gentity_t *ent) {
 	m->damage *= s_quadFactor;
 	m->splashDamage *= s_quadFactor;
 
-//	VectorAdd( m->s.pos.trDelta, ent->client->ps.velocity, m->s.pos.trDelta );	// "real" physics
+	G_AddPlayerForwardSpeed(m, ent);
 }
 
 
@@ -416,7 +429,7 @@ void Weapon_Plasmagun_Fire (gentity_t *ent) {
 	m->damage *= s_quadFactor;
 	m->splashDamage *= s_quadFactor;
 
-//	VectorAdd( m->s.pos.trDelta, ent->client->ps.velocity, m->s.pos.trDelta );	// "real" physics
+	G_AddPlayerForwardSpeed(m, ent);
 }
 
 /*
