@@ -1466,21 +1466,23 @@ PM_BeginWeaponChange
 ===============
 */
 static void PM_BeginWeaponChange( int weapon ) {
-	if ( weapon <= WP_NONE || weapon >= WP_NUM_WEAPONS ) {
-		return;
-	}
+	if ( weapon <= WP_NONE || weapon >= WP_NUM_WEAPONS ) return;
+	if ( !( pm->ps->stats[STAT_WEAPONS] & ( 1 << weapon ) ) ) return;
+	if ( pm->ps->weaponstate == WEAPON_DROPPING ) return;
 
-	if ( !( pm->ps->stats[STAT_WEAPONS] & ( 1 << weapon ) ) ) {
-		return;
-	}
-	
-	if ( pm->ps->weaponstate == WEAPON_DROPPING ) {
-		return;
+	// Fast switch: только если таймер истёк И зажат fire
+	if ( pm->ps->stats[STAT_WEAPON_FAST_SWITCH_TIMER] <= 0 &&
+	     ( pm->cmd.buttons & BUTTON_ATTACK ) ) {
+		pm->ps->stats[STAT_FAST_SWITCH_FLAG] = 1;
+		pm->ps->stats[STAT_WEAPON_FAST_SWITCH_TIMER] = 3000;   // кулдаун fast switch
+		pm->ps->weaponTime = 100;   // fast drop (не ниже 50 — иначе desync)
+	} else {
+		pm->ps->stats[STAT_FAST_SWITCH_FLAG] = 0;
+		pm->ps->weaponTime += 200;  // vanilla drop
 	}
 
 	PM_AddEvent( EV_CHANGE_WEAPON );
 	pm->ps->weaponstate = WEAPON_DROPPING;
-	pm->ps->weaponTime += 200;
 	PM_StartTorsoAnim( TORSO_DROP );
 }
 
@@ -1491,20 +1493,23 @@ PM_FinishWeaponChange
 ===============
 */
 static void PM_FinishWeaponChange( void ) {
-	int		weapon;
+	int weapon;
 
 	weapon = pm->cmd.weapon;
-	if ( weapon < WP_NONE || weapon >= WP_NUM_WEAPONS ) {
-		weapon = WP_NONE;
-	}
-
-	if ( !( pm->ps->stats[STAT_WEAPONS] & ( 1 << weapon ) ) ) {
-		weapon = WP_NONE;
-	}
+	if ( weapon < WP_NONE || weapon >= WP_NUM_WEAPONS ) weapon = WP_NONE;
+	if ( !( pm->ps->stats[STAT_WEAPONS] & ( 1 << weapon ) ) ) weapon = WP_NONE;
 
 	pm->ps->weapon = weapon;
 	pm->ps->weaponstate = WEAPON_RAISING;
-	pm->ps->weaponTime += 250;
+
+	// Решение fast/slow уже принято в Begin (и могло быть апгрейднуто в PM_Weapon)
+	if ( pm->ps->stats[STAT_FAST_SWITCH_FLAG] ) {
+		pm->ps->weaponTime = 50;    // fast raise (не ниже 25 — иначе desync)
+	} else {
+		pm->ps->weaponTime = 250;   // vanilla raise
+	}
+	pm->ps->stats[STAT_FAST_SWITCH_FLAG] = 0;   // сброс для следующей смены
+
 	PM_StartTorsoAnim( TORSO_RAISE );
 }
 
@@ -1537,28 +1542,17 @@ Generates weapon events and modifes the weapon counter
 static void PM_Weapon( void ) {
 	int		addTime;
 
-	// don't allow attack until all buttons are up
-	if ( pm->ps->pm_flags & PMF_RESPAWNED ) {
-		return;
-	}
+	// ─── Vanilla preamble ───
+	if ( pm->ps->pm_flags & PMF_RESPAWNED ) return;
+	if ( pm->ps->persistant[PERS_TEAM] == TEAM_SPECTATOR ) return;
+	if ( pm->ps->stats[STAT_HEALTH] <= 0 ) { pm->ps->weapon = WP_NONE; return; }
 
-	// ignore if spectator
-	if ( pm->ps->persistant[PERS_TEAM] == TEAM_SPECTATOR ) {
-		return;
-	}
-
-	// check for dead player
-	if ( pm->ps->stats[STAT_HEALTH] <= 0 ) {
-		pm->ps->weapon = WP_NONE;
-		return;
-	}
-
-	// check for item using
+	// ─── Use holdable (vanilla) ───
 	if ( pm->cmd.buttons & BUTTON_USE_HOLDABLE ) {
-		if ( ! ( pm->ps->pm_flags & PMF_USE_ITEM_HELD ) ) {
+		if ( !( pm->ps->pm_flags & PMF_USE_ITEM_HELD ) ) {
 			if ( bg_itemlist[pm->ps->stats[STAT_HOLDABLE_ITEM]].giTag == HI_MEDKIT
 				&& pm->ps->stats[STAT_HEALTH] >= (pm->ps->stats[STAT_MAX_HEALTH] + 25) ) {
-				// don't use medkit if at max health
+				// skip
 			} else {
 				pm->ps->pm_flags |= PMF_USE_ITEM_HELD;
 				PM_AddEvent( EV_USE_ITEM0 + bg_itemlist[pm->ps->stats[STAT_HOLDABLE_ITEM]].giTag );
@@ -1570,32 +1564,74 @@ static void PM_Weapon( void ) {
 		pm->ps->pm_flags &= ~PMF_USE_ITEM_HELD;
 	}
 
+	// ─── 0) UPGRADE: если в DROPPING/RAISING нажали fire и таймер готов,
+	//         сокращаем оставшийся weaponTime до fast-нормы.
+	//         Срабатывает в ЛЮБОЙ момент drop/raise (не только в Begin).
+	if ( ( pm->ps->weaponstate == WEAPON_DROPPING ||
+	       pm->ps->weaponstate == WEAPON_RAISING ) &&
+	     !pm->ps->stats[STAT_FAST_SWITCH_FLAG] &&
+	     ( pm->cmd.buttons & BUTTON_ATTACK ) &&
+	     pm->ps->stats[STAT_WEAPON_FAST_SWITCH_TIMER] <= 0 ) {
 
-	// make weapon function
-	if ( pm->ps->weaponTime > 0 ) {
-		pm->ps->weaponTime -= pml.msec;
+		int fast_time;
+
+		if ( pm->ps->weaponstate == WEAPON_DROPPING ) {
+			fast_time = 100;   // fast drop // ЕСЛИ МЕНЯТЬ ЗНАЧЕНИЕ ТО В PM_BeginWeaponChange ТОЖЕ НАДО
+		} else {
+			fast_time = 50;    // fast raise // ЕСЛИ МЕНЯТЬ ЗНАЧЕНИЕ ТО В PM_FinishWeaponChange ТОЖЕ НАДО
+		}
+
+		pm->ps->stats[STAT_FAST_SWITCH_FLAG] = 1;
+		pm->ps->stats[STAT_WEAPON_FAST_SWITCH_TIMER] = 3000;
+
+		// Сокращаем остаток кд, но НЕ увеличиваем, если он уже меньше
+		if ( pm->ps->weaponTime > fast_time ) {
+			pm->ps->weaponTime = fast_time;
+		}
 	}
 
-	// check for weapon change
-	// can't change if weapon is firing, but can change
-	// again if lowering or raising
-	if ( pm->ps->weaponTime <= 0 || pm->ps->weaponstate != WEAPON_FIRING ) {
+	// ─── 1) Тик weaponTime (анимация + кулдаун) ───
+	if ( pm->ps->weaponTime > 0 ) {
+		pm->ps->weaponTime -= pml.msec;
+		if ( pm->ps->weaponTime < 0 ) pm->ps->weaponTime = 0;
+	}
+
+	// ─── 2) Тик FAST_SWITCH_TIMER ───
+	if ( pm->ps->stats[STAT_WEAPON_FAST_SWITCH_TIMER] > 0 ) {
+		pm->ps->stats[STAT_WEAPON_FAST_SWITCH_TIMER] -= pml.msec;
+		if ( pm->ps->stats[STAT_WEAPON_FAST_SWITCH_TIMER] < 0 )
+			pm->ps->stats[STAT_WEAPON_FAST_SWITCH_TIMER] = 0;
+	}
+
+	// ─── 3) Тик LAST_FIRED_COOLDOWN
+	if ( pm->ps->stats[STAT_LAST_FIRED_COOLDOWN] > 0 ) {
+		pm->ps->stats[STAT_LAST_FIRED_COOLDOWN] -= pml.msec;
+		if ( pm->ps->stats[STAT_LAST_FIRED_COOLDOWN] < 0 )
+			pm->ps->stats[STAT_LAST_FIRED_COOLDOWN] = 0;
+	}
+	// Когда кулдаун истёк — снимаем «защиту от абуза» с оружия
+	if ( pm->ps->stats[STAT_LAST_FIRED_COOLDOWN] == 0 ) {
+		pm->ps->stats[STAT_LAST_FIRED_WEAPON] = 0;
+	}
+
+	// ─── 4) CPMA-style смена (в любой момент, кроме DROPPING/RAISING) ───
+	if ( pm->ps->weaponstate != WEAPON_DROPPING &&
+	     pm->ps->weaponstate != WEAPON_RAISING ) {
 		if ( pm->ps->weapon != pm->cmd.weapon ) {
 			PM_BeginWeaponChange( pm->cmd.weapon );
 		}
 	}
 
-	if ( pm->ps->weaponTime > 0 ) {
-		return;
-	}
-
-	// change weapon if time
+	// ─── 5) DROPPING ───
 	if ( pm->ps->weaponstate == WEAPON_DROPPING ) {
+		if ( pm->ps->weaponTime > 0 ) return;
 		PM_FinishWeaponChange();
 		return;
 	}
 
+	// ─── 6) RAISING ───
 	if ( pm->ps->weaponstate == WEAPON_RAISING ) {
+		if ( pm->ps->weaponTime > 0 ) return;
 		pm->ps->weaponstate = WEAPON_READY;
 		if ( pm->ps->weapon == WP_GAUNTLET ) {
 			PM_StartTorsoAnim( TORSO_STAND2 );
@@ -1605,16 +1641,31 @@ static void PM_Weapon( void ) {
 		return;
 	}
 
-	// check for fire
-	if ( ! (pm->cmd.buttons & BUTTON_ATTACK) ) {
+	// ─── 7) Fire отпущен — сброс и выход ───
+	if ( !( pm->cmd.buttons & BUTTON_ATTACK ) ) {
 		pm->ps->weaponTime = 0;
 		pm->ps->weaponstate = WEAPON_READY;
 		return;
 	}
 
-	// start the animation even if out of ammo
+	// ─── 8) ЗАЩИТА от awp-like абуза: если вернулись на оружие, с которого недавно
+	//         стреляли, и его кулдаун ещё тикает — стрелять нельзя
+	if ( pm->ps->stats[STAT_LAST_FIRED_WEAPON] == pm->ps->weapon &&
+	     pm->ps->stats[STAT_LAST_FIRED_COOLDOWN] > 0 ) {
+		pm->ps->weaponstate = WEAPON_READY;
+		return;
+	}
+
+	// ─── 9) Обычный кулдаун weaponTime ───
+	// ★ weaponstate = READY обязателен — иначе при активном кулдауне
+	//   state застревает в FIRING, и сервер вызывает FireWeapon 60 раз/сек
+	if ( pm->ps->weaponTime > 0 ) {
+		pm->ps->weaponstate = WEAPON_READY;
+		return;
+	}
+
+	// ─── 10) Fire logic (vanilla) ───
 	if ( pm->ps->weapon == WP_GAUNTLET ) {
-		// the guantlet only "fires" when it actually hits something
 		if ( !pm->gauntletHit ) {
 			pm->ps->weaponTime = 0;
 			pm->ps->weaponstate = WEAPON_READY;
@@ -1627,81 +1678,65 @@ static void PM_Weapon( void ) {
 
 	pm->ps->weaponstate = WEAPON_FIRING;
 
-	// check for out of ammo
-	if ( ! pm->ps->ammo[ pm->ps->weapon ] ) {
+	if ( !pm->ps->ammo[ pm->ps->weapon ] ) {
 		PM_AddEvent( EV_NOAMMO );
 		pm->ps->weaponTime += 500;
 		return;
 	}
 
-	// take an ammo away if not infinite
 	if ( pm->ps->ammo[ pm->ps->weapon ] != -1 ) {
 		pm->ps->ammo[ pm->ps->weapon ]--;
 	}
 
-	// fire weapon
 	PM_AddEvent( EV_FIRE_WEAPON );
 
 	switch( pm->ps->weapon ) {
 	default:
-	case WP_GAUNTLET:
-		addTime = 400;
-		break;
-	case WP_LIGHTNING:
-		addTime = 50;
-		break;
-	case WP_SHOTGUN:
-		addTime = 1000;
-		break;
-	case WP_MACHINEGUN:
-		addTime = 100;
-		break;
-	case WP_GRENADE_LAUNCHER:
-		addTime = 800;
-		break;
-	case WP_ROCKET_LAUNCHER:
-		addTime = 800;
-		break;
-	case WP_PLASMAGUN:
-		addTime = 100;
-		break;
-	case WP_RAILGUN:
-		addTime = 1500;
-		break;
-	case WP_BFG:
-		addTime = 200;
-		break;
-	case WP_GRAPPLING_HOOK:
-		addTime = 400;
-		break;
+	case WP_GAUNTLET:         addTime = 400;  break;
+	case WP_LIGHTNING:        addTime = 50;   break;
+	case WP_SHOTGUN:          addTime = 1000; break;
+	case WP_MACHINEGUN:       addTime = 100;  break;
+	case WP_GRENADE_LAUNCHER: addTime = 800;  break;
+	case WP_ROCKET_LAUNCHER:  addTime = 800;  break;
+	case WP_PLASMAGUN:        addTime = 100;  break;
+	case WP_RAILGUN:          addTime = 1500; break;
+	case WP_BFG:              addTime = 200;  break;
+	case WP_GRAPPLING_HOOK:   addTime = 400;  break;
 #ifdef MISSIONPACK
-	case WP_NAILGUN:
-		addTime = 1000;
-		break;
-	case WP_PROX_LAUNCHER:
-		addTime = 800;
-		break;
-	case WP_CHAINGUN:
-		addTime = 30;
-		break;
+	case WP_NAILGUN:          addTime = 1000; break;
+	case WP_PROX_LAUNCHER:    addTime = 800;  break;
+	case WP_CHAINGUN:         addTime = 30;   break;
 #endif
 	}
 
 #ifdef MISSIONPACK
-	if( bg_itemlist[pm->ps->stats[STAT_PERSISTANT_POWERUP]].giTag == PW_SCOUT ) {
+	if ( bg_itemlist[pm->ps->stats[STAT_PERSISTANT_POWERUP]].giTag == PW_SCOUT ) {
 		addTime /= 1.5;
-	}
-	else
-	if( bg_itemlist[pm->ps->stats[STAT_PERSISTANT_POWERUP]].giTag == PW_AMMOREGEN ) {
+	} else if ( bg_itemlist[pm->ps->stats[STAT_PERSISTANT_POWERUP]].giTag == PW_AMMOREGEN ) {
 		addTime /= 1.3;
-	}
-	else
+	} else
 #endif
 	if ( pm->ps->powerups[PW_HASTE] ) {
 		addTime /= 1.3;
 	}
 
 	pm->ps->weaponTime += addTime;
+
+	// ─── 11) Запоминаем оружие, чей кулдаун тикает в фоне ───
+	//
+	// После выстрела кулдаун оружия продолжает тикать, даже если игрок
+	// сменил оружие. Это нужно, чтобы нельзя было сделать
+	// fire rail → switch → switch → fire rail быстрее 1500 мс.
+	//
+	// Логика:
+	//   - ещё ничего не запомнено (stats[10] == 0)    → запоминаем текущее
+	//   - запомнено это же оружие                     → обновляем остаток кулдауна
+	//   - запомнено ДРУГОЕ оружие                     → не трогаем, оно своё оттикает
+	if ( pm->ps->stats[STAT_LAST_FIRED_WEAPON] == 0 ||
+	     pm->ps->stats[STAT_LAST_FIRED_WEAPON] == pm->ps->weapon ) {
+		pm->ps->stats[STAT_LAST_FIRED_WEAPON]   = pm->ps->weapon;
+		pm->ps->stats[STAT_LAST_FIRED_COOLDOWN] = pm->ps->weaponTime;
+	}
 }
 
 /*

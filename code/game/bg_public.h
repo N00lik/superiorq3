@@ -218,6 +218,12 @@ typedef enum {
 	STAT_MAX_HEALTH					// health / armor limit, changeable by handicap
 } statIndex_t;
 
+// ─── Свободные слоты stats[8..15] (не заняты vanilla в baseq3 и missionpack) ───
+#define STAT_WEAPON_FAST_SWITCH_TIMER   8   // кулдаун fast switch
+#define STAT_FAST_SWITCH_FLAG          9 // // 1 = текущая смена fast, 0 = slow
+#define STAT_LAST_FIRED_WEAPON     10   // оружие, чей кулдаун защищён
+#define STAT_LAST_FIRED_COOLDOWN  11  // остаток его кулдауна (тикает всегда)
+
 
 // player_state->persistant[] indexes
 // these fields are the only part of player_state that isn't
