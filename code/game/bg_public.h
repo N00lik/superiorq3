@@ -218,6 +218,9 @@ typedef enum {
 	STAT_MAX_HEALTH					// health / armor limit, changeable by handicap
 } statIndex_t;
 
+// ─── Свободные слоты stats[8..15] (не заняты в baseq3 и missionpack) ───
+#define STAT_WEAPON_CD_BASE  8   // stats[8..11] — индивидуальные кулдауны для: rail, shotgun, grenade, rocket(медленные пукши, у быстрых кд меньше чем переключение)
+
 
 // player_state->persistant[] indexes
 // these fields are the only part of player_state that isn't

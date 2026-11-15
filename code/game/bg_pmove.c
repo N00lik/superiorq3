@@ -1459,6 +1459,26 @@ static void PM_WaterEvents( void ) {		// FIXME?
 	}
 }
 
+/*
+===============
+WeaponCooldownSlot
+
+Возвращает индекс слота (0..3) для «медленного» оружия,
+или -1 для «быстрых» (плазма, пулемёт, лайтинг, BFG, gauntlet, hook).
+«Медленные» — кулдаун > 450 мс (drop+raise), нужен индивидуальный таймер.
+===============
+*/
+
+static int WeaponCooldownSlot( int weapon ) {
+	switch ( weapon ) {
+	case WP_RAILGUN:          return 0;   // stats[8],  кулдаун 1500
+	case WP_SHOTGUN:          return 1;   // stats[9],  кулдаун 1000
+	case WP_GRENADE_LAUNCHER: return 2;   // stats[10], кулдаун 800
+	case WP_ROCKET_LAUNCHER:  return 3;   // stats[11], кулдаун 800
+	default:                  return -1;  // быстрое — на weaponTime
+	}
+}
+
 
 /*
 ===============
@@ -1466,21 +1486,13 @@ PM_BeginWeaponChange
 ===============
 */
 static void PM_BeginWeaponChange( int weapon ) {
-	if ( weapon <= WP_NONE || weapon >= WP_NUM_WEAPONS ) {
-		return;
-	}
-
-	if ( !( pm->ps->stats[STAT_WEAPONS] & ( 1 << weapon ) ) ) {
-		return;
-	}
-	
-	if ( pm->ps->weaponstate == WEAPON_DROPPING ) {
-		return;
-	}
+	if ( weapon <= WP_NONE || weapon >= WP_NUM_WEAPONS ) return;
+	if ( !( pm->ps->stats[STAT_WEAPONS] & ( 1 << weapon ) ) ) return;
+	if ( pm->ps->weaponstate == WEAPON_DROPPING ) return;
 
 	PM_AddEvent( EV_CHANGE_WEAPON );
 	pm->ps->weaponstate = WEAPON_DROPPING;
-	pm->ps->weaponTime += 200;
+	pm->ps->weaponTime = 100;   // drop — только анимация (200 vanila)
 	PM_StartTorsoAnim( TORSO_DROP );
 }
 
@@ -1491,20 +1503,15 @@ PM_FinishWeaponChange
 ===============
 */
 static void PM_FinishWeaponChange( void ) {
-	int		weapon;
+	int weapon;
 
 	weapon = pm->cmd.weapon;
-	if ( weapon < WP_NONE || weapon >= WP_NUM_WEAPONS ) {
-		weapon = WP_NONE;
-	}
-
-	if ( !( pm->ps->stats[STAT_WEAPONS] & ( 1 << weapon ) ) ) {
-		weapon = WP_NONE;
-	}
+	if ( weapon < WP_NONE || weapon >= WP_NUM_WEAPONS ) weapon = WP_NONE;
+	if ( !( pm->ps->stats[STAT_WEAPONS] & ( 1 << weapon ) ) ) weapon = WP_NONE;
 
 	pm->ps->weapon = weapon;
 	pm->ps->weaponstate = WEAPON_RAISING;
-	pm->ps->weaponTime += 250;
+	pm->ps->weaponTime = 125;   // raise — только анимация (250 vanila)
 	PM_StartTorsoAnim( TORSO_RAISE );
 }
 
@@ -1536,29 +1543,20 @@ Generates weapon events and modifes the weapon counter
 */
 static void PM_Weapon( void ) {
 	int		addTime;
+	int		i;
+	int		slot;
 
-	// don't allow attack until all buttons are up
-	if ( pm->ps->pm_flags & PMF_RESPAWNED ) {
-		return;
-	}
+	// ─── Vanilla preamble ───
+	if ( pm->ps->pm_flags & PMF_RESPAWNED ) return;
+	if ( pm->ps->persistant[PERS_TEAM] == TEAM_SPECTATOR ) return;
+	if ( pm->ps->stats[STAT_HEALTH] <= 0 ) { pm->ps->weapon = WP_NONE; return; }
 
-	// ignore if spectator
-	if ( pm->ps->persistant[PERS_TEAM] == TEAM_SPECTATOR ) {
-		return;
-	}
-
-	// check for dead player
-	if ( pm->ps->stats[STAT_HEALTH] <= 0 ) {
-		pm->ps->weapon = WP_NONE;
-		return;
-	}
-
-	// check for item using
+	// ─── Use holdable (vanilla) ───
 	if ( pm->cmd.buttons & BUTTON_USE_HOLDABLE ) {
-		if ( ! ( pm->ps->pm_flags & PMF_USE_ITEM_HELD ) ) {
+		if ( !( pm->ps->pm_flags & PMF_USE_ITEM_HELD ) ) {
 			if ( bg_itemlist[pm->ps->stats[STAT_HOLDABLE_ITEM]].giTag == HI_MEDKIT
 				&& pm->ps->stats[STAT_HEALTH] >= (pm->ps->stats[STAT_MAX_HEALTH] + 25) ) {
-				// don't use medkit if at max health
+				// skip
 			} else {
 				pm->ps->pm_flags |= PMF_USE_ITEM_HELD;
 				PM_AddEvent( EV_USE_ITEM0 + bg_itemlist[pm->ps->stats[STAT_HOLDABLE_ITEM]].giTag );
@@ -1570,32 +1568,41 @@ static void PM_Weapon( void ) {
 		pm->ps->pm_flags &= ~PMF_USE_ITEM_HELD;
 	}
 
-
-	// make weapon function
+	// ─── 1) Тик weaponTime (анимация + кулдаун быстрых) ───
 	if ( pm->ps->weaponTime > 0 ) {
 		pm->ps->weaponTime -= pml.msec;
+		if ( pm->ps->weaponTime < 0 ) pm->ps->weaponTime = 0;
 	}
 
-	// check for weapon change
-	// can't change if weapon is firing, but can change
-	// again if lowering or raising
-	if ( pm->ps->weaponTime <= 0 || pm->ps->weaponstate != WEAPON_FIRING ) {
+	// ─── 2) Тик stats[8..11] (кулдауны 4 медленных) ───
+	// ★ Клампим в 0 — иначе отрицательное значение ломает проверку
+	for ( i = 0; i < 4; i++ ) {
+		if ( pm->ps->stats[STAT_WEAPON_CD_BASE + i] > 0 ) {
+			pm->ps->stats[STAT_WEAPON_CD_BASE + i] -= pml.msec;
+			if ( pm->ps->stats[STAT_WEAPON_CD_BASE + i] < 0 ) {
+				pm->ps->stats[STAT_WEAPON_CD_BASE + i] = 0;
+			}
+		}
+	}
+
+	// ─── 3) CPMA-style смена (в любой момент, кроме DROPPING/RAISING) ───
+	if ( pm->ps->weaponstate != WEAPON_DROPPING &&
+	     pm->ps->weaponstate != WEAPON_RAISING ) {
 		if ( pm->ps->weapon != pm->cmd.weapon ) {
 			PM_BeginWeaponChange( pm->cmd.weapon );
 		}
 	}
 
-	if ( pm->ps->weaponTime > 0 ) {
-		return;
-	}
-
-	// change weapon if time
+	// ─── 4) DROPPING — ждём анимацию ───
 	if ( pm->ps->weaponstate == WEAPON_DROPPING ) {
+		if ( pm->ps->weaponTime > 0 ) return;
 		PM_FinishWeaponChange();
 		return;
 	}
 
+	// ─── 5) RAISING — ждём анимацию ───
 	if ( pm->ps->weaponstate == WEAPON_RAISING ) {
+		if ( pm->ps->weaponTime > 0 ) return;
 		pm->ps->weaponstate = WEAPON_READY;
 		if ( pm->ps->weapon == WP_GAUNTLET ) {
 			PM_StartTorsoAnim( TORSO_STAND2 );
@@ -1605,16 +1612,33 @@ static void PM_Weapon( void ) {
 		return;
 	}
 
-	// check for fire
-	if ( ! (pm->cmd.buttons & BUTTON_ATTACK) ) {
+	// ─── 6) Fire отпущен ───
+	if ( !( pm->cmd.buttons & BUTTON_ATTACK ) ) {
 		pm->ps->weaponTime = 0;
 		pm->ps->weaponstate = WEAPON_READY;
 		return;
 	}
 
-	// start the animation even if out of ammo
+	// ─── 7) Кулдаун текущего оружия блокирует выстрел ───
+	slot = WeaponCooldownSlot( pm->ps->weapon );
+	if ( slot >= 0 ) {
+		// «медленное»: проверяем stats[8..11]
+		if ( pm->ps->stats[STAT_WEAPON_CD_BASE + slot] > 0 ) {
+			// ★ weaponstate = READY обязателен — иначе сервер вызывает
+			//   FireWeapon каждый кадр, пока state == FIRING, и получаем 60 выстрелов/сек
+			pm->ps->weaponstate = WEAPON_READY;
+			return;
+		}
+	} else {
+		// «быстрое»: проверяем weaponTime (vanilla)
+		if ( pm->ps->weaponTime > 0 ) {
+			pm->ps->weaponstate = WEAPON_READY;
+			return;
+		}
+	}
+
+	// ─── 8) Fire logic (vanilla) ───
 	if ( pm->ps->weapon == WP_GAUNTLET ) {
-		// the guantlet only "fires" when it actually hits something
 		if ( !pm->gauntletHit ) {
 			pm->ps->weaponTime = 0;
 			pm->ps->weaponstate = WEAPON_READY;
@@ -1627,81 +1651,63 @@ static void PM_Weapon( void ) {
 
 	pm->ps->weaponstate = WEAPON_FIRING;
 
-	// check for out of ammo
-	if ( ! pm->ps->ammo[ pm->ps->weapon ] ) {
-		PM_AddEvent( EV_NOAMMO );
-		pm->ps->weaponTime += 500;
-		return;
-	}
+	if ( !pm->ps->ammo[ pm->ps->weapon ] ) {
+    PM_AddEvent( EV_NOAMMO );
+    slot = WeaponCooldownSlot( pm->ps->weapon );
+    if ( slot >= 0 ) {
+		// «медленное»: штраф в stats[]
+        pm->ps->stats[STAT_WEAPON_CD_BASE + slot] += 500;
+        pm->ps->weaponstate = WEAPON_READY;
+    } else {
+		// «быстрое»: как vanilla
+        pm->ps->weaponTime += 500;
+    }
+    return;
+}
 
-	// take an ammo away if not infinite
 	if ( pm->ps->ammo[ pm->ps->weapon ] != -1 ) {
 		pm->ps->ammo[ pm->ps->weapon ]--;
 	}
 
-	// fire weapon
 	PM_AddEvent( EV_FIRE_WEAPON );
 
 	switch( pm->ps->weapon ) {
 	default:
-	case WP_GAUNTLET:
-		addTime = 400;
-		break;
-	case WP_LIGHTNING:
-		addTime = 50;
-		break;
-	case WP_SHOTGUN:
-		addTime = 1000;
-		break;
-	case WP_MACHINEGUN:
-		addTime = 100;
-		break;
-	case WP_GRENADE_LAUNCHER:
-		addTime = 800;
-		break;
-	case WP_ROCKET_LAUNCHER:
-		addTime = 800;
-		break;
-	case WP_PLASMAGUN:
-		addTime = 100;
-		break;
-	case WP_RAILGUN:
-		addTime = 1500;
-		break;
-	case WP_BFG:
-		addTime = 200;
-		break;
-	case WP_GRAPPLING_HOOK:
-		addTime = 400;
-		break;
+	case WP_GAUNTLET:         addTime = 400;  break;
+	case WP_LIGHTNING:        addTime = 50;   break;
+	case WP_SHOTGUN:          addTime = 1000; break;
+	case WP_MACHINEGUN:       addTime = 100;  break;
+	case WP_GRENADE_LAUNCHER: addTime = 800;  break;
+	case WP_ROCKET_LAUNCHER:  addTime = 800;  break;
+	case WP_PLASMAGUN:        addTime = 100;  break;
+	case WP_RAILGUN:          addTime = 1500; break;
+	case WP_BFG:              addTime = 200;  break;
+	case WP_GRAPPLING_HOOK:   addTime = 400;  break;
 #ifdef MISSIONPACK
-	case WP_NAILGUN:
-		addTime = 1000;
-		break;
-	case WP_PROX_LAUNCHER:
-		addTime = 800;
-		break;
-	case WP_CHAINGUN:
-		addTime = 30;
-		break;
+	case WP_NAILGUN:          addTime = 1000; break;
+	case WP_PROX_LAUNCHER:    addTime = 800;  break;
+	case WP_CHAINGUN:         addTime = 30;   break;
 #endif
 	}
 
 #ifdef MISSIONPACK
-	if( bg_itemlist[pm->ps->stats[STAT_PERSISTANT_POWERUP]].giTag == PW_SCOUT ) {
+	if ( bg_itemlist[pm->ps->stats[STAT_PERSISTANT_POWERUP]].giTag == PW_SCOUT ) {
 		addTime /= 1.5;
-	}
-	else
-	if( bg_itemlist[pm->ps->stats[STAT_PERSISTANT_POWERUP]].giTag == PW_AMMOREGEN ) {
+	} else if ( bg_itemlist[pm->ps->stats[STAT_PERSISTANT_POWERUP]].giTag == PW_AMMOREGEN ) {
 		addTime /= 1.3;
-	}
-	else
+	} else
 #endif
 	if ( pm->ps->powerups[PW_HASTE] ) {
 		addTime /= 1.3;
 	}
 
-	pm->ps->weaponTime += addTime;
+	// ─── 9) Ставим кулдаун: медленные → stats[], быстрые → weaponTime ───
+	slot = WeaponCooldownSlot( pm->ps->weapon );
+	if ( slot >= 0 ) {
+		pm->ps->stats[STAT_WEAPON_CD_BASE + slot] += addTime;
+	} else {
+		pm->ps->weaponTime += addTime;
+	}
 }
 
 /*
