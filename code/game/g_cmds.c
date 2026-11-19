@@ -1817,6 +1817,19 @@ void ClientCommand( int clientNum ) {
 		Cmd_SetViewpos_f( ent );
 	else if (Q_stricmp (cmd, "stats") == 0)
 		Cmd_Stats_f( ent );
+	else if (Q_stricmp (cmd, "grenade_toggle") == 0) {
+    	if(ent->client->ps.weapon != WP_GRENADE_LAUNCHER) {
+			return;
+		}
+    	if ( ent->client->ps.stats[STAT_GRENADE_MODE] == 0 ) {
+        	ent->client->ps.stats[STAT_GRENADE_MODE] = 1;
+        	G_Sound( ent, CHAN_AUTO, G_SoundIndex( "sound/misc/menu1.wav" ) ); //долгие гранаты
+    	}
+		else {
+        	ent->client->ps.stats[STAT_GRENADE_MODE] = 0;
+        	G_Sound( ent, CHAN_AUTO, G_SoundIndex( "sound/weapons/noammo.wav" ) ); //быстрые гранаты
+    	}
+}
 	else
 		trap_SendServerCommand( clientNum, va("print \"unknown cmd %s\n\"", cmd ) );
 }

@@ -388,6 +388,13 @@ void weapon_grenadelauncher_fire (gentity_t *ent) {
 	//VectorNormalize( forward );
 
 	m = fire_grenade (ent, muzzle, forward);
+
+	if ( ent->client->ps.stats[STAT_GRENADE_MODE] == 1 ) {
+        m->nextthink = level.time + GRENADE_FUSE_LONG;
+    } else {
+        m->nextthink = level.time + GRENADE_FUSE_SHORT;
+    }
+
 	m->damage *= s_quadFactor;
 	m->splashDamage *= s_quadFactor;
 	

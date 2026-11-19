@@ -218,8 +218,34 @@ typedef enum {
 	STAT_MAX_HEALTH					// health / armor limit, changeable by handicap
 } statIndex_t;
 
-// ─── Свободные слоты stats[8..15] (не заняты в baseq3 и missionpack) ───
-#define STAT_WEAPON_CD_BASE  8   // stats[8..11] — индивидуальные кулдауны для: rail, shotgun, grenade, rocket(медленные пукши, у быстрых кд меньше чем переключение)
+// ═══════════════════════════════════════════════════════════════════
+//  КАРТА СЛОТОВ stats[] — что занято модом
+// ═══════════════════════════════════════════════════════════════════
+//
+//  stats[0..6]   — vanilla (baseq3): HEALTH, HOLDABLE, WEAPONS, ARMOR,
+//                  DEAD_YAW, CLIENTS_READY, MAX_HEALTH
+//  stats[0..7]   — vanilla (missionpack): то же + PERSISTANT_POWERUP
+//
+//  ─── ЗАНЯТО МОДОМ ───
+//  stats[8]      — кулдаун WP_RAILGUN
+//  stats[9]      — кулдаун WP_SHOTGUN
+//  stats[10]     — кулдаун WP_GRENADE_LAUNCHER
+//  stats[11]     — кулдаун WP_ROCKET_LAUNCHER
+//	(Кулдауны для медленных оружий определены в bg_pmove.c -> static int WeaponCooldownSlot)
+//
+//  stats[12]     — режим гранаты (0 = 1с, 1 = 5с)
+//
+//  ─── СВОБОДНО ───
+//  stats[13..15] — не заняты, можно использовать под новые фичи
+//
+//  ⚠️  НЕ ИСПОЛЬЗОВАТЬ stats[8..12] в других фичах!
+// ═══════════════════════════════════════════════════════════════════
+
+#define STAT_WEAPON_CD_BASE		8 // 8..11 — кулдауны «медленных» оружий
+#define STAT_GRENADE_MODE		12 // 12    — режим гранаты (0/1)
+
+#define GRENADE_FUSE_SHORT		900 //кд короткой гранаты
+#define GRENADE_FUSE_LONG		2500 // кд длинной гранаты
 
 
 // player_state->persistant[] indexes
