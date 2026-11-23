@@ -10,16 +10,13 @@ if cmake --build build; then
     # Копирование свежих QVM в папку мода
     mkdir -p build/Release/superiorq3/vm
     cp -v build/Release/baseq3/vm/*.qvm build/Release/superiorq3/vm/
-    echo "✅ QVM скопированы в build/Release/superiorq3/vm/"
+
+    # Копирование конфига из корня репозитория в папку мода
+    cp -v autoexec.cfg build/Release/superiorq3/autoexec.cfg
+
+    echo "✅ QVM и autoexec.cfg скопированы в build/Release/superiorq3/"
 else
     echo "❌ Сборка упала — смотри вывод выше"
 fi
 
 read -rp "Нажми Enter, чтобы выйти..."
-
-# ─── Быстрая сборка (без touch, параллельно) ───────────────────────
-# Раскомментируй, если нужна скорость, а не гарантия пересборки:
-#
-# cd "$(dirname "$0")"
-# cmake --build build -j"$(nproc)"
-# echo "✅ Быстрая сборка завершена"
