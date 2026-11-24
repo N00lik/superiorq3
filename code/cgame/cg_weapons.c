@@ -2030,25 +2030,34 @@ Perform the same traces the server did to locate the
 hit splashes
 ================
 */
-static void CG_ShotgunPattern( vec3_t origin, vec3_t origin2, int seed, int otherEntNum ) {
+static void CG_ShotgunPattern( vec3_t origin, vec3_t origin2, int otherEntNum ) {
 	int			i;
 	float		r, u;
 	vec3_t		end;
 	vec3_t		forward, right, up;
+	vec3_t		worldUp = { 0, 0, 1 };
 
-	// derive the right and up vectors from the forward vector, because
-	// the client won't have any other information
+	// Фиксированный разброс дробинок
+	static const float fixed_x[12] = {  -6000,  6000,     0,     0,  2000, -2000,     0,     0,  2000,  2000, -2000, -2000 };
+	static const float fixed_y[12] = {      0,     0,  3470, -3470,     0,     0,  2000, -2000,  4000, -4000, -4000,  4000 };
+
+	// Оси от мирового up — то же самое, что на сервере
 	VectorNormalize2( origin2, forward );
-	PerpendicularVector( right, forward );
-	CrossProduct( forward, right, up );
 
-	// generate the "random" spread pattern
+	if ( fabs( forward[2] ) > 0.99f ) {
+		VectorSet( worldUp, 1, 0, 0 );
+	}
+
+	CrossProduct( forward, worldUp, right );
+	VectorNormalize( right );
+	CrossProduct( right, forward, up );
+
 	for ( i = 0 ; i < DEFAULT_SHOTGUN_COUNT ; i++ ) {
-		r = Q_crandom( &seed ) * DEFAULT_SHOTGUN_SPREAD * 16;
-		u = Q_crandom( &seed ) * DEFAULT_SHOTGUN_SPREAD * 16;
-		VectorMA( origin, 8192 * 16, forward, end);
-		VectorMA (end, r, right, end);
-		VectorMA (end, u, up, end);
+		r = fixed_x[i];
+		u = fixed_y[i];
+		VectorMA( origin, 8192 * 16, forward, end );
+		VectorMA( end, r, right, end );
+		VectorMA( end, u, up, end );
 
 		CG_ShotgunPellet( origin, end, otherEntNum );
 	}
@@ -2077,7 +2086,7 @@ void CG_ShotgunFire( entityState_t *es ) {
 			CG_SmokePuff( v, up, 32, 1, 1, 1, 0.33f, 900, cg.time, 0, LEF_PUFF_DONT_SCALE, cgs.media.shotgunSmokePuffShader );
 		}
 	}
-	CG_ShotgunPattern( es->pos.trBase, es->origin2, es->eventParm, es->otherEntityNum );
+	CG_ShotgunPattern( es->pos.trBase, es->origin2, es->otherEntityNum );
 }
 
 /*

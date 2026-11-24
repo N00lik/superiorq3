@@ -277,7 +277,7 @@ SHOTGUN
 
 // DEFAULT_SHOTGUN_SPREAD and DEFAULT_SHOTGUN_COUNT	are in bg_public.h, because
 // client predicts same spreads
-#define	DEFAULT_SHOTGUN_DAMAGE	10
+#define	DEFAULT_SHOTGUN_DAMAGE	9
 
 qboolean ShotgunPellet( vec3_t start, vec3_t end, gentity_t *ent ) {
 	trace_t		tr;
@@ -330,27 +330,37 @@ qboolean ShotgunPellet( vec3_t start, vec3_t end, gentity_t *ent ) {
 }
 
 // this should match CG_ShotgunPattern
-void ShotgunPattern( vec3_t origin, vec3_t origin2, int seed, gentity_t *ent ) {
+// this should match CG_ShotgunPattern
+void ShotgunPattern( vec3_t origin, vec3_t origin2, gentity_t *ent ) {
 	int			i;
 	float		r, u;
 	vec3_t		end;
 	vec3_t		localForward, localRight, localUp;
+	vec3_t		worldUp = { 0, 0, 1 };
 	qboolean	hitClient = qfalse;
 
-	// derive the right and up vectors from the forward vector, because
-	// the client won't have any other information
-	VectorNormalize2( origin2, localForward );
-	PerpendicularVector( localRight, localForward );
-	CrossProduct( localForward, localRight, localUp );
+	// Фиксированный разброс дробинок
+	static const float fixed_x[12] = {  -6000,  6000,     0,     0,  2000, -2000,     0,     0,  2000,  2000, -2000, -2000 };
+	static const float fixed_y[12] = {      0,     0,  3470, -3470,     0,     0,  2000, -2000,  4000, -4000, -4000,  4000 };
 
-	// generate the "random" spread pattern
+	// Оси от мирового up — паттерн не вращается при повороте камеры
+	VectorNormalize2( origin2, localForward );
+
+	if ( fabs( localForward[2] ) > 0.99f ) {
+		VectorSet( worldUp, 1, 0, 0 );
+	}
+
+	CrossProduct( localForward, worldUp, localRight );
+	VectorNormalize( localRight );
+	CrossProduct( localRight, localForward, localUp );
+
 	for ( i = 0 ; i < DEFAULT_SHOTGUN_COUNT ; i++ ) {
-		r = Q_crandom( &seed ) * DEFAULT_SHOTGUN_SPREAD * 16;
-		u = Q_crandom( &seed ) * DEFAULT_SHOTGUN_SPREAD * 16;
-		VectorMA( origin, 8192 * 16, localForward, end);
-		VectorMA (end, r, localRight, end);
-		VectorMA (end, u, localUp, end);
-		if( ShotgunPellet( origin, end, ent ) && !hitClient ) {
+		r = fixed_x[i];
+		u = fixed_y[i];
+		VectorMA( origin, 8192 * 16, localForward, end );
+		VectorMA( end, r, localRight, end );
+		VectorMA( end, u, localUp, end );
+		if ( ShotgunPellet( origin, end, ent ) && !hitClient ) {
 			hitClient = qtrue;
 			ent->client->accuracy_hits++;
 		}
@@ -365,10 +375,9 @@ void weapon_supershotgun_fire (gentity_t *ent) {
 	tent = G_TempEntity( muzzle, EV_SHOTGUN );
 	VectorScale( forward, 4096, tent->s.origin2 );
 	SnapVector( tent->s.origin2 );
-	tent->s.eventParm = rand() & 255;		// seed for spread pattern
 	tent->s.otherEntityNum = ent->s.number;
 
-	ShotgunPattern( tent->s.pos.trBase, tent->s.origin2, tent->s.eventParm, ent );
+	ShotgunPattern( tent->s.pos.trBase, tent->s.origin2, ent );
 }
 
 
