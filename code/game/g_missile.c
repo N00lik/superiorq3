@@ -644,8 +644,12 @@ gentity_t *fire_grenade (gentity_t *self, vec3_t start, vec3_t dir) {
 	bolt->r.ownerNum = self->s.number;
 	bolt->parent = self;
 	bolt->damage = 100;
-	bolt->splashDamage = 100;
-	bolt->splashRadius = 150;
+	bolt->splashDamage = 80; // 100 ваниль
+
+	//В CG_AddSpriteExplosion в cg_localents.c в CG_AddSpriteExplosion увеличен спрайт равно-пропорционально сплэш-урону
+	//В cg_weapon.c размер light тоже равнопропорционально увеличен
+	bolt->splashRadius = 250; //150 ваниль
+
 	bolt->methodOfDeath = MOD_GRENADE;
 	bolt->splashMethodOfDeath = MOD_GRENADE_SPLASH;
 	bolt->clipmask = MASK_SHOT;
@@ -724,8 +728,16 @@ gentity_t *fire_rocket (gentity_t *self, vec3_t start, vec3_t dir) {
 	bolt->s.weapon = WP_ROCKET_LAUNCHER;
 	bolt->r.ownerNum = self->s.number;
 	bolt->parent = self;
-	bolt->damage = 90; // 100 ваниль
+	bolt->damage = 100;
+
+	//Размер спрайта дыма уменьшен равно-пропорционально сплэш урону в cg_weapon.c в функции CG_ParticleExplosion
+	//вот в этой строчке: CG_ParticleExplosion( "explode1", sprOrg, sprVel, 1400, 16, 24 );
+	//Величина light тоже в CG_MissileHitWall равно-пропорционально изменена
+
+	//Размер спрайта взрыва уменьшен равно-пропорционально сплэш урону в cg_localents.c в CG_AddSpriteExplosion
+	// Как же тяжко без паттернов проэктирования ООП бывает, пизда
 	bolt->splashDamage = 80; // 100 ваниль
+
 	bolt->splashRadius = 120;
 	bolt->methodOfDeath = MOD_ROCKET;
 	bolt->splashMethodOfDeath = MOD_ROCKET_SPLASH;

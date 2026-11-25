@@ -516,7 +516,21 @@ static void CG_AddSpriteExplosion( localEntity_t *le ) {
 	re.shaderRGBA[3] = 0xff * c * 0.33;
 
 	re.reType = RT_SPRITE;
-	re.radius = 42 * ( 1.0 - c ) + 30;
+
+	if ( re.customShader == cgs.media.grenadeExplosionShader ) {
+		//увеличено равно-пропорционально сплэшу гранаты(от150 ванильные к 250
+		//искать в g_missile.c fire_grenade
+		re.radius = 70 * ( 1.0 - c ) + 50;
+	}
+	else if ( re.customShader == cgs.media.rocketExplosionShader ) {
+		//уменьшено равно-пропорционально сплэшу ракеты
+		//искать в g_missile.c fire_rocket
+		re.radius = 34 * ( 1.0 - c ) + 24;
+	}
+	else {
+    	// BFG, prox и всё остальное — ванильные значения
+    	re.radius = 42 * ( 1.0 - c ) + 30;
+	}
 
 	trap_R_AddRefEntityToScene( &re );
 

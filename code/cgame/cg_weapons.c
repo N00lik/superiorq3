@@ -1810,7 +1810,7 @@ void CG_MissileHitWall( int weapon, int clientNum, vec3_t origin, vec3_t dir, im
 		sfx = cgs.media.sfx_rockexp;
 		mark = cgs.media.burnMarkShader;
 		radius = 64;
-		light = 300;
+		light = 500; //300 ванильное
 		isSprite = qtrue;
 		break;
 	case WP_ROCKET_LAUNCHER:
@@ -1819,7 +1819,7 @@ void CG_MissileHitWall( int weapon, int clientNum, vec3_t origin, vec3_t dir, im
 		sfx = cgs.media.sfx_rockexp;
 		mark = cgs.media.burnMarkShader;
 		radius = 64;
-		light = 300;
+		light = 240; //300 ваниль
 		isSprite = qtrue;
 		duration = 1000;
 		lightColor[0] = 1;
@@ -1829,8 +1829,11 @@ void CG_MissileHitWall( int weapon, int clientNum, vec3_t origin, vec3_t dir, im
 			// explosion sprite animation
 			VectorMA( origin, 24, dir, sprOrg );
 			VectorScale( dir, 64, sprVel );
-
-			CG_ParticleExplosion( "explode1", sprOrg, sprVel, 1400, 20, 30 );
+			
+			//( "explode1", sprOrg, sprVel, 1400, 20, 30 );
+			//  - ванильные(размеры уменьшены пропорционально сплеш демеджу(было 100 щас 80))
+			// Искать сплеш в g_missile.c fire_rocket
+			CG_ParticleExplosion( "explode1", sprOrg, sprVel, 1400, 16, 24 );
 		}
 		break;
 	case WP_RAILGUN:

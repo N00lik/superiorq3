@@ -880,17 +880,13 @@ void G_Damage( gentity_t *targ, gentity_t *inflictor, gentity_t *attacker,
 	if ( inflictor && inflictor->s.weapon != WP_NONE ) {
     switch ( inflictor->s.weapon ) {
 		case WP_ROCKET_LAUNCHER:
-		knockback *= 2.5f;
-		break;
-		/*case WP_RAILGUN:
-		knockback *= 0.5f;   // рейл — слабее
-		break;
-		case WP_SHOTGUN:
-		knockback *= 1.2f;   // дробовик — чуть сильнее
-		break;*/
-		// ... другие оружия ...
+			knockback *= 2.5f;
+			break;
+		case WP_GRENADE_LAUNCHER:
+			knockback *= 2.5f;
+			break;
     	default:
-        break;               // остальные — как в ваниле
+        	break;               // остальные — как в ваниле
     }
 	}
 	if ( knockback > 200 ) {

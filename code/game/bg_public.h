@@ -244,7 +244,7 @@ typedef enum {
 #define STAT_GRENADE_MODE		12 // 12    — режим гранаты (0/1)
 
 #define GRENADE_FUSE_SHORT		900 //кд короткой гранаты
-#define GRENADE_FUSE_LONG		2500 // кд длинной гранаты
+#define GRENADE_FUSE_LONG		2000 // кд длинной гранаты
 
 
 // player_state->persistant[] indexes
